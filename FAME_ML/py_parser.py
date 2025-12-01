@@ -5,9 +5,14 @@ Oct 20, 2020
 Parser needed to implement FAME-ML 
 '''
 
-import ast 
-import os 
-import constants 
+import logging
+from FAME_ML import logconfig  # ensures logging config loads
+logger = logging.getLogger(__name__)
+
+import ast
+import os
+from FAME_ML import constants
+
 
 
 def checkLoggingPerData(tree_object, name2track):
@@ -77,13 +82,17 @@ def checkAttribFuncsInExcept(expr_obj):
                 attrib_list = attrib_list + commonAttribCallBody( func_node )
     return attrib_list 
 
-def getPythonParseObject( pyFile ): 
-	try:
-		full_tree = ast.parse( open( pyFile ).read())    
-	except SyntaxError:
-		# print(constants.PARSING_ERROR_KW, pyFile )
-		full_tree = ast.parse(constants.EMPTY_STRING) 
-	return full_tree 
+def getPythonParseObject(pyFile):
+    logger.debug(f"getPythonParseObject: Parsing file {pyFile}")
+    
+    try:
+        full_tree = ast.parse(open(pyFile).read())
+        logger.info(f"getPythonParseObject: Successfully parsed {pyFile}")
+    except SyntaxError:
+        logger.warning(f"getPythonParseObject: Syntax error in {pyFile}, using EMPTY_STRING fallback")
+        full_tree = ast.parse(constants.EMPTY_STRING)
+
+    return full_tree
 
 def commonAttribCallBody(node_):
     full_list = []
@@ -253,40 +262,59 @@ def getFunctionAssignments(pyTree):
     
     
 def getFunctionDefinitions(pyTree):
+    logger.debug("getFunctionDefinitions: Starting extraction of function calls from AST")
+
     func_list = []
     func_var_list = []
+
     for stmt_ in pyTree.body:
         for node_ in ast.walk(stmt_):
-        	if isinstance(node_, ast.Call):
-        		funcDict = node_.__dict__ 
-        		func_, funcArgs, funcLineNo, funcKeys =  funcDict[ constants.FUNC_KW ], funcDict[constants.ARGS_KW], funcDict[constants.LINE_NO_KW], funcDict[constants.KEY_WORDS_KW] 
-        		if( isinstance(func_, ast.Name ) ):  
-        			func_name = func_.id 
-        			call_arg_list = []
-        			index = 0                
-        			for x_ in range(len(funcArgs)):
-        				index = x_ + 1
-        				funcArg = funcArgs[x_] 
-        				if( isinstance(funcArg, ast.Name ) )  :
-        					call_arg_list.append( (  funcArg.id, constants.INDEX_KW + str(x_ + 1) )  ) 
-        				elif( isinstance(funcArg, ast.Attribute) ): 
-        					arg_dic  = funcArg.__dict__
-        					arg_name = arg_dic[constants.ATTRIB_KW] 
-        					call_arg_list.append( (  arg_name, constants.INDEX_KW + str(x_ + 1) )  ) 
-        				elif( isinstance( funcArg, ast.Call ) ):
-        					func_arg_dict  = funcArg.__dict__
-        					func_arg = func_arg_dict[constants.FUNC_KW] 
-        					call_arg_list.append( ( func_arg, constants.INDEX_KW + str( x_ + 1 )  ) )
-        				elif( isinstance( funcArg, ast.Str ) ):
-        					call_arg_list.append( ( funcArg.s, constants.INDEX_KW + str( x_ + 1 )  ) )
-        					
-        			for x_ in range(len(funcKeys)):
-        				funcKey = funcKeys[x_] 
-        				if( isinstance(funcKey, ast.keyword ) )  :
-        					call_arg_list.append( (  funcKey.arg, constants.INDEX_KW + str(x_ + index + 1) )  ) 
-        			func_list.append( ( func_name , funcLineNo, call_arg_list  ) )        
-        			         
+            if isinstance(node_, ast.Call):
+                funcDict = node_.__dict__
+                func_, funcArgs, funcLineNo, funcKeys = (
+                    funcDict[constants.FUNC_KW],
+                    funcDict[constants.ARGS_KW],
+                    funcDict[constants.LINE_NO_KW],
+                    funcDict[constants.KEY_WORDS_KW],
+                )
+
+                if isinstance(func_, ast.Name):
+                    func_name = func_.id
+                    call_arg_list = []
+                    index = 0
+
+                    for x_ in range(len(funcArgs)):
+                        index = x_ + 1
+                        funcArg = funcArgs[x_]
+
+                        if isinstance(funcArg, ast.Name):
+                            call_arg_list.append((funcArg.id, constants.INDEX_KW + str(x_ + 1)))
+                        elif isinstance(funcArg, ast.Attribute):
+                            arg_dic = funcArg.__dict__
+                            arg_name = arg_dic[constants.ATTRIB_KW]
+                            call_arg_list.append((arg_name, constants.INDEX_KW + str(x_ + 1)))
+                        elif isinstance(funcArg, ast.Call):
+                            func_arg_dict = funcArg.__dict__
+                            func_arg = func_arg_dict[constants.FUNC_KW]
+                            call_arg_list.append((func_arg, constants.INDEX_KW + str(x_ + 1)))
+                        elif isinstance(funcArg, ast.Str):
+                            call_arg_list.append((funcArg.s, constants.INDEX_KW + str(x_ + 1)))
+
+                    for x_ in range(len(funcKeys)):
+                        funcKey = funcKeys[x_]
+                        if isinstance(funcKey, ast.keyword):
+                            call_arg_list.append(
+                                (funcKey.arg, constants.INDEX_KW + str(x_ + index + 1))
+                            )
+
+                    logger.debug(
+                        f"getFunctionDefinitions: Found function '{func_name}' on line {funcLineNo} with {len(call_arg_list)} args"
+                    )
+                    func_list.append((func_name, funcLineNo, call_arg_list))
+
+    logger.info(f"getFunctionDefinitions: Total functions extracted = {len(func_list)}")
     return func_list
+
 
     
     
@@ -427,10 +455,14 @@ def getImport(pyTree):
 
     return import_list 
 
-def checkIfParsablePython( pyFile ):
-	flag = True 
-	try:
-		full_tree = ast.parse( open( pyFile ).read())    
-	except (SyntaxError, UnicodeDecodeError) as err_ :
-		flag = False 
-	return flag 	
+def checkIfParsablePython(pyFile):
+    logger.debug(f"checkIfParsablePython: Checking file {pyFile}")
+    
+    flag = True
+    try:
+        full_tree = ast.parse(open(pyFile).read())
+    except (SyntaxError, UnicodeDecodeError):
+        flag = False
+
+    logger.info(f"checkIfParsablePython: Result = {flag}")
+    return flag
