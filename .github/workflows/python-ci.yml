@@ -27,7 +27,9 @@ jobs:
     - name: Run fuzz tester
       run: |
         echo "Running fuzz.py..."
+        export PYTHONPATH=$PYTHONPATH:MLForensics-farzana
         python -m FAME_ML.fuzz
+
 
     - name: Upload crash logs (if any)
       uses: actions/upload-artifact@v4
